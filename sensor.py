@@ -18,7 +18,7 @@ OP_MAX  = 4        # Compute the highest sensor value.
 OP_SAME = 5	       # Compute the number of sensors with the same value.
 
 ## This is used to pack message fields into a binary format.
-message_format = struct.Struct('!7if')
+message_format = struct.Struct('!8if')
 
 ## Length of a message in bytes.
 message_length = message_format.size
@@ -39,6 +39,7 @@ def message_encode(type, sequence, initiator, neighbor, operation=0, capability=
 	"""
 	ix, iy = initiator
 	nx, ny = neighbor
+
 	return message_format.pack(type, sequence,
 		ix, iy, nx, ny, operation, capability, payload)
 
