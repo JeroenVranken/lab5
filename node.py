@@ -3,6 +3,7 @@ import struct
 import time
 import select
 
+
 from socket import *
 from random import randint
 from gui import MainWindow
@@ -15,7 +16,7 @@ from neighbour import *
 
 class Node(object):
 	def __init__(self, address, position, radius, value):
-		self.address = address
+		
 		self.position = position
 		self.range = radius
 		self.value = value
@@ -50,6 +51,7 @@ class Node(object):
 			peer.bind( ('', INADDR_ANY) )
 
 		self.peer = peer
+		self.address = self.peer.getsockname()
 
 	def addToList(self, neighbour):
 		self.list[neighbour.address] = neighbour
@@ -57,26 +59,40 @@ class Node(object):
 
 	# [TODO] Sends a ping command to all other nodes
 	def sendPing(self):
-		print "WeBePinging " + str(self.address[1])
 		message = message_encode(MSG_PING, 0, self.position, self.position)
 	
 		for c in self.writeable:
-			c.sendto(message, (self.address[0], self.address[1]))
+			print str(c.getsockname())
+			c.sendto(message, self.mcast.getsockname())
+			self.write("sending ping")
+	
 
-	def sendPong(self):
-		print "WeBePonging " + str(self.address[1])
+
+		# check distance
+		# not too big?
+		# Not myself (==0)
+		# send pong to initiator
+
+	def sendPong(self, sender):
 		message = message_encode(MSG_PONG, 0, self.position, self.position)
-
-		for c in self.writeable:
-			c.sendto(message, (self.address[0], self.address[1]))
+		self.write(str(sender))
+		# for c in self.writeable:
+			# if c.getsockname()[1] == sender[1]:
+		# self.peer.sendto(message, sender)
+		self.write("pong to: " + str(sender))
 
 	# Automatically select sockets to read and write from
 	def updateSelect(self):
 		self.readable, self.writeable, self.exceptional = select.select([self.mcast], [self.peer], [], 0)
 
 	def updateNeighbours(self, sender):
-		print "WEZIJNER! " + str(self.address[1])
+		self.write("updateNeighbours " + str(sender[1]))
 
+	def addWindow(self, window):
+		self.window = window
+
+	def write(self, message):
+		self.window.writeln(message)
 
 
 

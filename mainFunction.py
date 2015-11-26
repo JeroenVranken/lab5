@@ -3,6 +3,7 @@
 ## STUDENT ID:			10658491   &   10559949
 import sys
 import struct
+import math
 from socket import *
 from random import randint
 from gui import MainWindow
@@ -33,13 +34,14 @@ def main(mcast_addr,
 
 	# initialize node
 	node = Node(mcast_addr, sensor_pos,sensor_range, sensor_val)
-	print str(sensor_pos) + "\n"
 
 	# -- make the gui --
 	window = MainWindow()
 	window.writeln( 'my address is %s:%s' % node.peer.getsockname() )
 	window.writeln( 'my position is (%s, %s)' % sensor_pos )
 	window.writeln( 'my sensor value is %s' % sensor_val )
+
+	node.addWindow(window)
 
 	# -- This is the event loop. --
 	while window.update():
@@ -48,15 +50,16 @@ def main(mcast_addr,
 
 		# Check for new messages
 		for c in node.readable:
+			node.write("readable loop")
+
 			# Receive message from server and write to the window
 			message = c.recvfrom(1024)
 			parseMessage(message, node)
-			# window.write(str(message))
 
 		# Check if something was entered in the GUI, parse the input and execute the corresponding command
 		line = window.getline()
 		if line:
-			inputType = parseInput(line, node)
+			parseInput(line, node)
 	
 		# # Prevent busy looping
 		time.sleep(0.1)
@@ -66,18 +69,38 @@ def parseInput(i, node):
 	if split[0] == "ping":
 		node.sendPing()
 
+
 def parseMessage(i, node):
-	message = message_decode(i[0])
-	sender = i[1]
-	print "receiver: " + str(node.address[1]) + "sender: " + str(sender)
-	print str(message)
-	if message[0] == 0 and str(sender[1]) != str(node.address[1]):
-		node.sendPong()
+	decodedI = message_decode(i[0])
+	# node.write(str(senderIP))
+	mes = {}
+	mes['type'] = decodedI[0]
+	mes['sequence'] = decodedI[1]
+	mes['initiator'] = decodedI[2]
+	mes['neighbour'] = decodedI[3]
+	mes['senderIP'] = i[1]
 
-	# If received is pong, add to neighbour list
-	elif message[0] == 1:
-		node.updateNeighbours(sender)
+	dist = calcDist(mes['initiator'], node.position)
+	if dist <= node.range: # message in range
+		node.write("in range")
+		node.write("distance " + str(dist))
+		if dist != 0: # not it's own message
+			node.write(mes['type'])
+			if mes['type'] == MSG_PING:
+				node.sendPong(mes['senderIP'])
+				node.write("Ping message from sender: " + str(mes['initiator']))
 
+			# If received is pong, add to neighbour list
+			elif mes['type'] == MSG_PONG:
+				node.updateNeighbours(mes['initiator'])
+				node.write("Pong message from sender: " + str(mes['initiator']))
+
+
+
+def calcDist(l1, l2):
+	dif1 = abs(l1[0] - l2[0])
+	dif2 = abs(l1[1] - l2[1])
+	return math.sqrt((dif1**2)+(dif2**2))
 
 # -- program entry point --
 if __name__ == '__main__':
