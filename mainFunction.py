@@ -1,24 +1,24 @@
 ## Netwerken en Systeembeveiliging Lab 5 - Distributed Sensor Network
 ## NAME: 			Jeroen Vranken & Mees Froberg
 ## STUDENT ID:			10658491   &   10559949
+
 import sys
 import struct
 import math
-from socket import *
-from random import randint
-from gui import MainWindow
-from node import *
-from sensor import *
 import time
 import select
 
+from socket import *
+from random import randint
+from gui import MainWindow
+from sensor import *
+from node import *
 
 # Get random position in NxN grid.
 def random_position(n):
 	x = randint(0, n)
 	y = randint(0, n)
 	return (x, y)
-
 
 def main(mcast_addr,
 	sensor_pos, sensor_range, sensor_val,
@@ -31,31 +31,23 @@ def main(mcast_addr,
 	grid_size: length of the  of the grid (which is always square).
 	ping_period: time in seconds between multicast pings.
 	"""
-
-	# initialize node
-	node = Node(mcast_addr, sensor_pos,sensor_range, sensor_val)
-
+	
 	# -- make the gui --
 	window = MainWindow()
-	window.writeln( 'my address is %s:%s' % node.peer.getsockname() )
-	window.writeln( 'my position is (%s, %s)' % sensor_pos )
-	window.writeln( 'my sensor value is %s' % sensor_val )
-
-	node.addWindow(window)
-
+	
+	# -- make the node --
+	node = Node(mcast_addr, sensor_pos,sensor_range, sensor_val, window)
+	
 	# -- This is the event loop. --
 	while window.update():
-
 		node.updateSelect()
-
+		
 		# Check for new messages
 		for c in node.readable:
-			node.write("readable loop")
-
 			# Receive message from server and write to the window
-			message = c.recvfrom(1024)
-			parseMessage(message, node)
-
+			data = c.recvfrom(1024)
+			parseData(data, node)
+		
 		# Check if something was entered in the GUI, parse the input and execute the corresponding command
 		line = window.getline()
 		if line:
@@ -64,38 +56,34 @@ def main(mcast_addr,
 		# # Prevent busy looping
 		time.sleep(0.1)
 
-def parseInput(i, node):
-	split = i.split(" ")
+def parseInput(inp, node):
+	split = inp.split(" ")
 	if split[0] == "ping":
 		node.sendPing()
 
+def parseData(data, node):
+	m = message_decode(data[0])
+	message = {}
+	message['type'] = m[0]
+	message['sequence'] = m[1]
+	message['initiator'] = m[2]
+	message['neighbour'] = m[3]
+	message['addr'] = data[1]
+	
+	dist = calcDist(message['initiator'], node.pos)
 
-def parseMessage(i, node):
-	decodedI = message_decode(i[0])
-	# node.write(str(senderIP))
-	mes = {}
-	mes['type'] = decodedI[0]
-	mes['sequence'] = decodedI[1]
-	mes['initiator'] = decodedI[2]
-	mes['neighbour'] = decodedI[3]
-	mes['senderIP'] = i[1]
+	node.writeln("message type = "+ str(message['type']))
+	# message in range and not it's own message
+	if dist <= node.range and dist != 0:
+		node.writeln("within range")
+		
+		# If received is a ping, send a pong
+		if message['type'] == MSG_PING:
+			node.sendPong(message['addr'])
 
-	dist = calcDist(mes['initiator'], node.position)
-	if dist <= node.range: # message in range
-		node.write("in range")
-		node.write("distance " + str(dist))
-		if dist != 0: # not it's own message
-			node.write(mes['type'])
-			if mes['type'] == MSG_PING:
-				node.sendPong(mes['senderIP'])
-				node.write("Ping message from sender: " + str(mes['initiator']))
-
-			# If received is pong, add to neighbour list
-			elif mes['type'] == MSG_PONG:
-				node.updateNeighbours(mes['initiator'])
-				node.write("Pong message from sender: " + str(mes['initiator']))
-
-
+		# If received is pong, add to neighbour list
+		elif message['type'] == MSG_PONG:
+			node.writeln(message['initiator'])
 
 def calcDist(l1, l2):
 	dif1 = abs(l1[0] - l2[0])
@@ -107,7 +95,7 @@ if __name__ == '__main__':
 	import sys, argparse
 	p = argparse.ArgumentParser()
 	p.add_argument('--group', help='multicast group', default='224.1.1.1')
-	p.add_argument('--port', help='multicast port', default=51525, type=int)
+	p.add_argument('--port', help='multicast port', default=50000, type=int)
 	p.add_argument('--pos', help='x,y sensor position', default=None)
 	p.add_argument('--grid', help='size of grid', default=100, type=int)
 	p.add_argument('--range', help='sensor range', default=50, type=int)
