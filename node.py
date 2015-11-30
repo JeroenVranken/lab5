@@ -80,6 +80,8 @@ class Node(object):
 		print self.writeln(self.neighbours)
 
 	def initiateEcho(self):
+		wave = Wave(self.pos, self.pos, None, self.sequence)
+		self.wave.append(wave)
 		for n in self.neighbours.values():
 			message = message_encode(MSG_ECHO, self.sequence, self.pos, self.pos)
 			self.peer.sendto(message, n)
@@ -116,13 +118,14 @@ class Node(object):
 	def sendEchoReply(self, wave):
 		self.writeln("sendEchoReply to " + str(wave.fatherPos))
 		message = message_encode(MSG_ECHO_REPLY, wave.sequence, wave.initiator, self.pos)
-		print "sending to %s" % str(wave.fatherAddr)
 		self.peer.sendto(message, wave.fatherAddr)
+
 
 	def receivedAllReplies(self, wave):
 		result = True
 		for n in self.neighbours:
 			if (n != wave.fatherPos) and (n not in wave.repliesFrom):
+				self.writeln("recieved false reply"+str(n))
 				result = False
 		return result
 			

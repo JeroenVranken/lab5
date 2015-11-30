@@ -86,7 +86,7 @@ def parseData(data, node):
 	message['neighbour'] = m[3]
 	message['addr'] = data[1]
 	
-	dist = calcDist(message['initiator'], node.pos)
+	dist = calcDist(message['neighbour'], node.pos)
 
 	
 	# message in range and not it's own message
@@ -109,11 +109,16 @@ def parseData(data, node):
 			# node.writeln("message type = "+ str(message['type']))
 			node.writeln("Received echo reply from "+ str(message['neighbour']))
 			for w in node.wave:
+				node.writeln(str(message['sequence']) + " " + str(w.sequence) + " " + str(message['initiator']) + " " + str(w.initiator))
 				if message['sequence'] == w.sequence and message['initiator'] == w.initiator:
 					w.addReply(message['neighbour'])
+					node.writeln("added reply")
 					if node.receivedAllReplies(w):
 						node.writeln("receivedAllReplies!")
-						node.sendEchoReply(w)
+						if w.fatherAddr != None: # Prevent the initiator to send to itself
+							node.sendEchoReply(w)
+						else:
+							node.writeln("ECHO WAVE COMPLETED!")
 
 def calcDist(l1, l2):
 	dif1 = abs(l1[0] - l2[0])
