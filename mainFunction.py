@@ -38,10 +38,19 @@ def main(mcast_addr,
 	# -- make the node --
 	node = Node(mcast_addr, sensor_pos,sensor_range, sensor_val, window)
 	
+	start_time = time.time()
+
+
 	# -- This is the event loop. --
 	while window.update():
 		node.updateSelect()
 		
+		# Auto ping
+		if (time.time() - start_time) > ping_period:
+			node.sendPing()
+			start_time = time.time()
+
+
 		# Check for new messages
 		for c in node.readable:
 			# Receive message from server and write to the window
@@ -60,6 +69,13 @@ def parseInput(inp, node):
 	split = inp.split(" ")
 	if split[0] == "ping":
 		node.sendPing()
+	elif split[0] == "list":
+		node.listNeighbours()
+	elif split[0] == "echo":
+		node.initiateEcho()
+	elif split[0] == "pos":
+		pos = (int(split[1]), int(split[2]))
+		node.setPos(pos)
 
 def parseData(data, node):
 	m = message_decode(data[0])
@@ -72,10 +88,9 @@ def parseData(data, node):
 	
 	dist = calcDist(message['initiator'], node.pos)
 
-	node.writeln("message type = "+ str(message['type']))
+	
 	# message in range and not it's own message
 	if dist <= node.range and dist != 0:
-		node.writeln("within range")
 		
 		# If received is a ping, send a pong
 		if message['type'] == MSG_PING:
@@ -83,7 +98,22 @@ def parseData(data, node):
 
 		# If received is pong, add to neighbour list
 		elif message['type'] == MSG_PONG:
-			node.writeln(message['initiator'])
+			node.updateNeighbours(message['initiator'], message['addr'])
+
+		elif message['type'] == MSG_ECHO:
+			# node.writeln("message type = "+ str(message['type']))
+			node.writeln("Received echo from "+ str(message['neighbour']))
+			node.createWave(message)
+
+		elif message['type'] == MSG_ECHO_REPLY:
+			# node.writeln("message type = "+ str(message['type']))
+			node.writeln("Received echo reply from "+ str(message['neighbour']))
+			for w in node.wave:
+				if message['sequence'] == w.sequence and message['initiator'] == w.initiator:
+					w.addReply(message['neighbour'])
+					if node.receivedAllReplies(w):
+						node.writeln("receivedAllReplies!")
+						node.sendEchoReply(w)
 
 def calcDist(l1, l2):
 	dif1 = abs(l1[0] - l2[0])
@@ -95,7 +125,7 @@ if __name__ == '__main__':
 	import sys, argparse
 	p = argparse.ArgumentParser()
 	p.add_argument('--group', help='multicast group', default='224.1.1.1')
-	p.add_argument('--port', help='multicast port', default=50000, type=int)
+	p.add_argument('--port', help='multicast port', default=51274, type=int)
 	p.add_argument('--pos', help='x,y sensor position', default=None)
 	p.add_argument('--grid', help='size of grid', default=100, type=int)
 	p.add_argument('--range', help='sensor range', default=50, type=int)

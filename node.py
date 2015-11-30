@@ -8,6 +8,7 @@ from random import randint
 from gui import MainWindow
 from sensor import *
 from neighbour import *
+from wave import *
 
 class Node(object):
 	def __init__(self, mcast_addr, sensor_pos, sensor_range, sensor_val, win):
@@ -18,11 +19,17 @@ class Node(object):
 		self.writeable = None
 		self.exceptional = None
 		self.window = win
+		self.neighbours = {}
+		self.sequence = 0
+		self.wave = []
 		
 		# -- Create the multicast listener socket. --
 		self.mcast = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
 		# Sets the socket address as reusable so you can run multiple instances
 		# of the program on the same machine at the same time.
+		if sys.platform.startswith('darwin'):
+			print "Dit is een mac!"
+			self.mcast.setsockopt(SOL_SOCKET, SO_REUSEPORT, 1)
 		self.mcast.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 		# Subscribe the socket to multicast messages from the given address.
 		mreq = struct.pack('4sl', inet_aton(mcast_addr[0]), INADDR_ANY)
@@ -50,21 +57,76 @@ class Node(object):
 		self.window.writeln(string)
 		
 	def sendPing(self):
+		self.neighbours = {}
 		message = message_encode(MSG_PING, 0, self.pos, self.pos)
 		for c in self.writeable:
 			c.sendto(message, self.mcast.getsockname())
-			self.writeln("Send ping message")
+			# self.writeln("Send ping message")
 
 	def sendPong(self, addr):
 		message = message_encode(MSG_PONG, 0, self.pos, self.pos)
-		self.peer.sendto(message,(addr[0], addr[1]))
-		self.writeln("Send pong to: "+str(addr))
+		self.peer.sendto(message, addr)
+		# self.writeln("Send pong to: "+ str(addr))
 	
 	def updateSelect(self):
-		self.readable, self.writeable, self.exceptional = select.select([self.mcast], [self.peer], [], 0)
+		self.readable, self.writeable, self.exceptional = select.select([self.mcast, self.peer], [self.peer], [], 0)
 
-	def updateNeighbours(self, addr):
-		self.write("updateNeighbours " + str(addr[1]))
+	def updateNeighbours(self, initiator, addr):
+		# self.writeln("updateNeighbours " + str(initiator) + ": " + str(addr))
+		# self.writeln("updatig neighbour:" + str(initiator) + " " + str(addr))
+		self.neighbours[initiator] = addr
 
+	def listNeighbours(self):
+		print self.writeln(self.neighbours)
+
+	def initiateEcho(self):
+		for n in self.neighbours.values():
+			message = message_encode(MSG_ECHO, self.sequence, self.pos, self.pos)
+			self.peer.sendto(message, n)
+
+		self.sequence += 1
+
+	def createWave(self, message):
+		newWave = True
+		wave = Wave(message['initiator'], message['neighbour'], message['addr'], message['sequence'])
+		for w in self.wave:
+			if w.initiator == wave.initiator and w.sequence == wave.sequence:
+				newWave = False
+		if newWave:
+			if len(self.neighbours) == 1:
+				self.sendEchoReply(wave)
+			else:
+				self.writeln("Creating new wave")
+				self.wave.append(wave)
+				self.sendEcho(wave)
+		else:
+			self.sendEchoReply(wave)
+
+	def sendEcho(self, wave):
+		# self.writeln("sendEcho")
+		for n in self.neighbours.values():
+			if n != wave.fatherAddr:
+				self.writeln("sendEcho forreal: " + str(n))
+				message = message_encode(MSG_ECHO, wave.sequence, wave.initiator, self.pos)
+				# ip, port = self.neighbours[n]
+				self.peer.sendto(message, n)
+				self.writeln("self.neighbours[n] :" + str(n))
+
+
+	def sendEchoReply(self, wave):
+		self.writeln("sendEchoReply to " + str(wave.fatherPos))
+		message = message_encode(MSG_ECHO_REPLY, wave.sequence, wave.initiator, self.pos)
+		print "sending to %s" % str(wave.fatherAddr)
+		self.peer.sendto(message, wave.fatherAddr)
+
+	def receivedAllReplies(self, wave):
+		result = True
+		for n in self.neighbours:
+			if (n != wave.fatherPos) and (n not in wave.repliesFrom):
+				result = False
+		return result
+			
+	def setPos(self, pos):
+		self.pos = pos
 
 
