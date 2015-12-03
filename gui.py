@@ -1,3 +1,9 @@
+## Netwerken en Systeembeveiliging Lab 5 - Distributed Sensor Network
+## NAME: 			Jeroen Vranken & Mees Froberg
+## STUDENT ID:			10658491   &   10559949
+## Group: 11
+
+
 import Tkinter as tk
 
 class MainWindow(object):

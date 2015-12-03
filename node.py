@@ -1,3 +1,11 @@
+## Netwerken en Systeembeveiliging Lab 5 - Distributed Sensor Network
+## NAME: 			Jeroen Vranken & Mees Froberg
+## STUDENT ID:			10658491   &   10559949
+## Group: 11
+##
+## Represent a single node in the network
+##
+
 import sys
 import struct
 import time
@@ -27,9 +35,7 @@ class Node(object):
 		self.mcast = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
 		# Sets the socket address as reusable so you can run multiple instances
 		# of the program on the same machine at the same time.
-		if sys.platform.startswith('darwin'):
-			print "Dit is een mac!"
-			self.mcast.setsockopt(SOL_SOCKET, SO_REUSEPORT, 1)
+
 		self.mcast.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 		# Subscribe the socket to multicast messages from the given address.
 		mreq = struct.pack('4sl', inet_aton(mcast_addr[0]), INADDR_ANY)
@@ -52,84 +58,118 @@ class Node(object):
 		self.writeln( 'my address is %s:%s' % self.peer.getsockname() )
 		self.writeln( 'my position is (%s, %s)' % self.pos )
 		self.writeln( 'my sensor value is %s' % self.val )
-			
+	
+	# Writes a line to the GUI		
 	def writeln(self, string):
 		self.window.writeln(string)
 		
+	# Resets the neighbour list, sends a multicast ping message
 	def sendPing(self):
 		self.neighbours = {}
 		message = message_encode(MSG_PING, 0, self.pos, self.pos)
 		for c in self.writeable:
 			c.sendto(message, self.mcast.getsockname())
-			# self.writeln("Send ping message")
 
+	# Sends a pong message to the given address
 	def sendPong(self, addr):
 		message = message_encode(MSG_PONG, 0, self.pos, self.pos)
 		self.peer.sendto(message, addr)
-		# self.writeln("Send pong to: "+ str(addr))
 	
+	# Runs the select statement to update the readable and writeable sockets
 	def updateSelect(self):
 		self.readable, self.writeable, self.exceptional = select.select([self.mcast, self.peer], [self.peer], [], 0)
 
+	# Adds a new neigbour to the nodes neighbour dictionary
 	def updateNeighbours(self, initiator, addr):
-		# self.writeln("updateNeighbours " + str(initiator) + ": " + str(addr))
-		# self.writeln("updatig neighbour:" + str(initiator) + " " + str(addr))
 		self.neighbours[initiator] = addr
 
+	# Write all the neighbours to the GUI
 	def listNeighbours(self):
-		print self.writeln(self.neighbours)
+		self.writeln("All neighbours:")
+		for n in self.neighbours:
+			self.writeln("Pos: " + str(n) + " Address: " + str(self.neighbours[n][0]) + ":" + str(self.neighbours[n][1]) )
 
-	def initiateEcho(self):
-		wave = Wave(self.pos, self.pos, None, self.sequence)
+	# Initate an echo wave, sets the corresponding operation field
+	def initiateEcho(self, operation):
+		self.writeln("Initiating wave: " + str(self.sequence) + " with operation: " + str(operation))
+		wave = Wave(self.pos, self.pos, None, self.sequence, operation, self.val, 0)
 		self.wave.append(wave)
+
+		# Loops over all neighbours, sends each neighbour an echo message
 		for n in self.neighbours.values():
-			message = message_encode(MSG_ECHO, self.sequence, self.pos, self.pos)
+			message = message_encode(MSG_ECHO, self.sequence, self.pos, self.pos, wave.operation, wave.capability, wave.payload)
 			self.peer.sendto(message, n)
 
+		# Increases the sequence number
 		self.sequence += 1
 
+
+	# Creates a wave with the received message, checks if it is a new wave, sends corresponding echo, or echo replies
 	def createWave(self, message):
+		# Check if the node already received an identical echo message
 		newWave = True
-		wave = Wave(message['initiator'], message['neighbour'], message['addr'], message['sequence'])
+		wave = Wave(message['initiator'], message['neighbour'], message['addr'], message['sequence'], message['operation'], message['capability'], message['payload'])
+		
 		for w in self.wave:
 			if w.initiator == wave.initiator and w.sequence == wave.sequence:
 				newWave = False
+		
 		if newWave:
+			# If only one neighbour node, this node must be the father, send echo reply
 			if len(self.neighbours) == 1:
 				self.sendEchoReply(wave)
 			else:
-				self.writeln("Creating new wave")
 				self.wave.append(wave)
 				self.sendEcho(wave)
+		# Node already received this message
 		else:
+			wave.setPayload(0)
 			self.sendEchoReply(wave)
 
+	# Sends an echo to all neighbours, except the father
 	def sendEcho(self, wave):
-		# self.writeln("sendEcho")
 		for n in self.neighbours.values():
 			if n != wave.fatherAddr:
-				self.writeln("sendEcho forreal: " + str(n))
-				message = message_encode(MSG_ECHO, wave.sequence, wave.initiator, self.pos)
-				# ip, port = self.neighbours[n]
+				message = message_encode(MSG_ECHO, wave.sequence, wave.initiator, self.pos, wave.operation, wave.capability, wave.payload)
 				self.peer.sendto(message, n)
-				self.writeln("self.neighbours[n] :" + str(n))
 
 
+	# Sends an echo reply to the father node
 	def sendEchoReply(self, wave):
-		self.writeln("sendEchoReply to " + str(wave.fatherPos))
-		message = message_encode(MSG_ECHO_REPLY, wave.sequence, wave.initiator, self.pos)
+
+		if wave.operation == OP_SIZE:
+			wave.incrementPayload()
+		
+		elif wave.operation == OP_SUM:
+			wave.setPayload(wave.payload + self.val)
+		
+		elif wave.operation == OP_SAME:
+			if wave.capability == self.val:
+				wave.incrementPayload()
+		
+		elif wave.operation == OP_MIN:
+			if wave.capability > self.val:
+				wave.setCapability(self.val)
+
+		elif wave.operation == OP_MAX:
+			if wave.capability < self.val:
+				wave.setCapability(self.val)
+
+		message = message_encode(MSG_ECHO_REPLY, wave.sequence, wave.initiator, self.pos, wave.operation, wave.capability, wave.payload)
 		self.peer.sendto(message, wave.fatherAddr)
 
-
+	# Returns true if a node received replies from all his neighbours except his father
 	def receivedAllReplies(self, wave):
 		result = True
 		for n in self.neighbours:
 			if (n != wave.fatherPos) and (n not in wave.repliesFrom):
-				self.writeln("recieved false reply"+str(n))
 				result = False
 		return result
 			
 	def setPos(self, pos):
 		self.pos = pos
+
+	def setVal(self, value):
+		self.val = value
 
 

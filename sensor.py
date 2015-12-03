@@ -1,6 +1,8 @@
-## Netwerken en Systeembeveiliging
-## Lab 5 - Distributed Sensor Network
-## Definitions and message format
+## Netwerken en Systeembeveiliging Lab 5 - Distributed Sensor Network
+## NAME: 			Jeroen Vranken & Mees Froberg
+## STUDENT ID:			10658491   &   10559949
+## Group: 11
+
 import struct
 
 ## These are the message types.
